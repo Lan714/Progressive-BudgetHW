@@ -1,153 +1,135 @@
-let transactions = [];
-let myChart;
-
-fetch("/api/transaction")
-  .then(response => {
-    return response.json();
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/service-worker.js')
+      .then(reg => console.log('Service Worker registered', reg))
   })
-  .then(data => {
-    // save db data on global variable
-    transactions = data;
-
-    populateTotal();
-    populateTable();
-    populateChart();
-  });
-
-function populateTotal() {
-  // reduce transaction amounts to a single total value
-  let total = transactions.reduce((total, t) => {
-    return total + parseInt(t.value);
-  }, 0);
-
-  let totalEl = document.querySelector("#total");
-  totalEl.textContent = total;
 }
 
-function populateTable() {
-  let tbody = document.querySelector("#tbody");
-  tbody.innerHTML = "";
+let total = 0
 
-  transactions.forEach(transaction => {
-    // create and populate a table row
-    let tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${transaction.name}</td>
-      <td>${transaction.value}</td>
-    `;
-
-    tbody.appendChild(tr);
-  });
-}
-
-function populateChart() {
-  // copy array and reverse it
-  let reversed = transactions.slice().reverse();
-  let sum = 0;
-
-  // create date labels for chart
-  let labels = reversed.map(t => {
-    let date = new Date(t.date);
-    return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
-  });
-
-  // create incremental values for chart
-  let data = reversed.map(t => {
-    sum += parseInt(t.value);
-    return sum;
-  });
-
-  // remove old chart if it exists
-  if (myChart) {
-    myChart.destroy();
+axios.get('/api/user', {
+  headers: {
+    'Authorization': `Bearer ${localStorage.getItem('token')}`
   }
-
-  let ctx = document.getElementById("myChart").getContext("2d");
-
-  myChart = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [{
-        label: "Total Over Time",
-        fill: true,
-        backgroundColor: "#6666ff",
-        data
-      }]
-    }
-  });
-}
-
-function sendTransaction(isAdding) {
-  let nameEl = document.querySelector("#t-name");
-  let amountEl = document.querySelector("#t-amount");
-  let errorEl = document.querySelector(".form .error");
-
-  // validate form
-  if (nameEl.value === "" || amountEl.value === "") {
-    errorEl.textContent = "Missing Information";
-    return;
-  }
-  else {
-    errorEl.textContent = "";
-  }
-
-  // create record
-  let transaction = {
-    name: nameEl.value,
-    value: amountEl.value,
-    date: new Date().toISOString()
-  };
-
-  // if subtracting funds, convert amount to negative number
-  if (!isAdding) {
-    transaction.value *= -1;
-  }
-
-  // add to beginning of current array of data
-  transactions.unshift(transaction);
-
-  // re-run logic to populate ui with new record
-  populateChart();
-  populateTable();
-  populateTotal();
-
-  // also send to server
-  fetch("/api/transaction", {
-    method: "POST",
-    body: JSON.stringify(transaction),
-    headers: {
-      Accept: "application/json, text/plain, */*",
-      "Content-Type": "application/json"
-    }
-  })
-    .then(response => {
-      return response.json();
+})
+  .then(({ data: user }) => {
+    user.transactions.forEach(transaction => {
+      const transactionElem = document.createElement('div')
+      transactionElem.classList = 'col-sm-3'
+      transactionElem.style = 'margin-top: 25px;'
+      transactionElem.innerHTML = `
+    <div class="card">
+      <div class="card-body" id=${transaction._id}>
+        <h5 class="card-title" style="margin-bottom: 20px;">${transaction.name}</h5>
+        <h6>$${transaction.value}</h6>
+    `
+      document.getElementById('transactions').append(transactionElem)
+      total = total + transaction.value
     })
-    .then(data => {
-      if (data.errors) {
-        errorEl.textContent = "Missing Information";
-      }
-      else {
-        // clear form
-        nameEl.value = "";
-        amountEl.value = "";
-      }
+    const totalElem = document.createElement('div')
+    totalElem.classList = 'col-sm-12'
+    totalElem.style = 'margin-top: 25px;'
+    totalElem.innerHTML = `
+    <div class="card">
+      <div class="card-body">
+        <h5 class="card-title" style="margin-bottom: 20px;" id="totalText">Total: $${total}</h5>
+    `
+    document.getElementById('total').append(totalElem)
+  })
+  .catch(err => window.location = './auth.html')
+
+document.getElementById('deposit').addEventListener('click', event => {
+  event.preventDefault()
+
+  let transaction = {
+    name: document.getElementById('name').value,
+    value: JSON.parse(document.getElementById('amount').value)
+  }
+  axios.post('/api/transactions', transaction, {
+    headers: {
+      'Authorization': `Bearer ${localStorage.getItem('token')}`
+    }
+  })
+    .then(({ data }) => {
+      let transactionElem = document.createElement('div')
+      transactionElem.classList = 'col-sm-3'
+      transactionElem.style = 'margin-top: 25px;'
+      transactionElem.innerHTML = `
+    <div class="card">
+      <div class="card-body">
+        <h5 class="card-title" style="margin-bottom: 20px;">${transaction.name}</h5>
+        <h6>$${transaction.value}</h6>
+      `
+      document.getElementById('transactions').append(transactionElem)
+      total = total + transaction.value
+      document.getElementById('totalText').innerText = `Total: $${total}`
+      document.getElementById('name').value = ''
+      document.getElementById('amount').value = ''
     })
     .catch(err => {
-      // fetch failed, so save in indexed db
-      saveRecord(transaction);
+      console.error(err)
+      saveRecord(transaction)
+      let transactionElem = document.createElement('div')
+      transactionElem.classList = 'col-sm-3'
+      transactionElem.style = 'margin-top: 25px;'
+      transactionElem.innerHTML = `
+      <div class="card">
+      <div class="card-body">
+        <h5 class="card-title" style="margin-bottom: 20px;">$${transaction.name}</h5>
+        <h6>${transaction.value}</h6>
+      `
+      document.getElementById('transactions').append(transactionElem)
+      total = total + transaction.value
+      document.getElementById('totalText').innerText = `Total: $${total}`
+      document.getElementById('name').value = ''
+      document.getElementById('amount').value = ''
+    })
+})
 
-      // clear form
-      nameEl.value = "";
-      amountEl.value = "";
-    });
-}
+document.getElementById('withdraw').addEventListener('click', event => {
+  event.preventDefault()
 
-document.querySelector("#add-btn").onclick = function () {
-  sendTransaction(true);
-};
-
-document.querySelector("#sub-btn").onclick = function () {
-  sendTransaction(false);
-};
+  let transaction = {
+    name: document.getElementById('name').value,
+    value: JSON.parse(`-${document.getElementById('amount').value}`)
+  }
+  axios.post('/api/transactions', transaction, {
+    headers: {
+      'Authorization': `Bearer ${localStorage.getItem('token')}`
+    }
+  })
+    .then(({ data }) => {
+      let transactionElem = document.createElement('div')
+      transactionElem.classList = 'col-sm-3'
+      transactionElem.style = 'margin-top: 25px;'
+      transactionElem.innerHTML = `
+    <div class="card">
+      <div class="card-body">
+        <h5 class="card-title" style="margin-bottom: 20px;">${transaction.name}</h5>
+        <h6>$${transaction.value}</h6>
+      `
+      document.getElementById('transactions').append(transactionElem)
+      total = total + transaction.value
+      document.getElementById('totalText').innerText = `Total: $${total}`
+      document.getElementById('name').value = ''
+      document.getElementById('amount').value = ''
+    })
+    .catch(err => {
+      console.error(err)
+      saveRecord(transaction)
+      let transactionElem = document.createElement('div')
+      transactionElem.classList = 'col-sm-3'
+      transactionElem.style = 'margin-top: 25px;'
+      transactionElem.innerHTML = `
+      <div class="card">
+      <div class="card-body">
+        <h5 class="card-title" style="margin-bottom: 20px;">${transaction.name}</h5>
+        <h6>$${transaction.value}</h6>
+      `
+      document.getElementById('transactions').append(transactionElem)
+      total = total + transaction.value
+      document.getElementById('totalText').innerText = `Total: $${total}`
+      document.getElementById('name').value = ''
+      document.getElementById('amount').value = ''
+    })
+})
