@@ -1,25 +1,18 @@
-const mongoose = require("mongoose");
+const { model, Schema } = require("mongoose");
 
-const Schema = mongoose.Schema;
-
-const transactionSchema = new Schema(
+const Transaction = new Schema(
   {
     name: {
       type: String,
       trim: true,
-      required: "Enter a name for transaction"
+      required: true
     },
     value: {
       type: Number,
-      required: "Enter an amount"
+      required: true
     },
-    date: {
-      type: Date,
-      default: Date.now
-    }
-  }
-);
+    { timestamps: true }
+  })
 
-const Transaction = mongoose.model("Transaction", transactionSchema);
+module.exports = model("Transaction", transactionSchema);
 
-module.exports = Transaction;
